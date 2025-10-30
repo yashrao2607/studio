@@ -2,7 +2,7 @@
 import {Auth, onAuthStateChanged, User} from 'firebase/auth';
 import React, {createContext, useContext, useEffect, useState} from 'react';
 import {useAuth, useFirestore} from '../provider';
-import {doc, getDoc, setDoc} from 'firebase/firestore';
+import {doc, getDoc, setDoc, serverTimestamp} from 'firebase/firestore';
 
 export interface UserProviderProps {
   children: React.ReactNode;
@@ -44,6 +44,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({children}) => {
               email,
               displayName,
               photoURL,
+              createdAt: serverTimestamp(),
             });
         }
       }
