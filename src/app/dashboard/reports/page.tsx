@@ -63,12 +63,15 @@ export default function ReportsPage() {
         const imageUrl = await getDownloadURL(snapshot.ref);
 
         // 4. Save report to Firestore
-        await addDoc(reportsRef!, {
-          name: file.name,
-          text: text,
-          imageUrl: imageUrl,
-          createdAt: serverTimestamp(),
-        });
+        if (reportsRef) {
+            await addDoc(reportsRef, {
+              name: file.name,
+              text: text,
+              imageUrl: imageUrl,
+              createdAt: serverTimestamp(),
+            });
+        }
+
 
         toast({ title: 'Success', description: 'Report uploaded and processed successfully.' });
       };
@@ -101,8 +104,8 @@ export default function ReportsPage() {
   };
   
   const handleAnalyze = async (report: Report) => {
-    if (!report.text) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Cannot analyze this report. Text content is missing.' });
+    if (!report.imageUrl) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Cannot analyze this report. Image URL is missing.' });
       return;
     }
     setIsAnalyzing(true);
@@ -139,7 +142,7 @@ export default function ReportsPage() {
       toast({ title: "Report Deleted", description: `"${report.name}" has been removed.` });
     } catch (error) {
       console.error("Error deleting report:", error);
-      toast({ variant: "destructive", title: "Deletion Failed", description: "Could not delete the report." });
+      toast({ variant: "destructive", title: "Deletion Failed", "description": "Could not delete the report." });
     }
   };
 
@@ -212,7 +215,7 @@ export default function ReportsPage() {
                     <FileText className="mr-2 h-4 w-4" /> View
                    </a>
                 </Button>
-                <Button className="w-full" onClick={() => handleAnalyze(report)} disabled={!report.text}>
+                <Button className="w-full" onClick={() => handleAnalyze(report)}>
                    <BarChart className="mr-2 h-4 w-4" /> Analyze
                 </Button>
               </CardFooter>

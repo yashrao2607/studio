@@ -47,7 +47,14 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-        const reportTexts = reports.map((report) => report.text);
+        const reportTexts = reports.map((report) => report.text).filter(Boolean);
+        if (reportTexts.length === 0) {
+            const aiMessage: Message = { sender: 'ai', text: "It seems none of your uploaded reports have extractable text. Please try uploading different documents." };
+            setMessages((prev) => [...prev, aiMessage]);
+            setIsLoading(false);
+            return;
+        }
+
         const result = await answerQuestionsAboutReport({ reports: reportTexts, question: input });
         const aiMessage: Message = { sender: 'ai', text: result.answer };
         setMessages((prev) => [...prev, aiMessage]);
