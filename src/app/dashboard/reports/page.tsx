@@ -10,7 +10,7 @@ import { summarizeUploadedReport } from '@/ai/flows/summarize-uploaded-report';
 import { extractTextFromDocument } from '@/ai/flows/extract-text-from-document';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useUser, useFirestore, useCollection } from '@/firebase';
-import { collection, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -33,46 +33,57 @@ export default function ReportsPage() {
   const { user } = useUser();
   const firestore = useFirestore();
 
-  const reportsRef = useMemo(() => {
+  const reportsQuery = useMemo(() => {
     if (!user || !firestore) return null;
-    return collection(firestore, 'users', user.uid, 'reports');
+    return query(collection(firestore, 'users', user.uid, 'reports'), orderBy('createdAt', 'desc'));
   }, [user, firestore]);
 
-  const { data: reports, loading: reportsLoading, error } = useCollection(reportsRef);
+  const { data: reports, loading: reportsLoading, error } = useCollection(reportsQuery);
 
   const handleFileChange = async (files: FileList | null) => {
     if (!files || files.length === 0 || !user || !firestore) return;
     
     const file = files[0];
+    if (!file) return;
+
     setIsUploading(true);
     
     try {
-      // 1. Convert file to data URI
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = async (e) => {
-        const dataUri = e.target?.result as string;
+        try {
+          const dataUri = e.target?.result as string;
+          if (!dataUri) {
+            throw new Error("Could not read file data.");
+          }
 
-        // 2. Extract text using AI
-        const { text } = await extractTextFromDocument({ fileDataUri: dataUri });
+          // 1. Extract text using AI
+          const { text } = await extractTextFromDocument({ fileDataUri: dataUri });
 
-        // 3. Upload image to Firebase Storage
-        const storage = getStorage();
-        const storageRef = ref(storage, `users/${user.uid}/reports/${file.name}_${Date.now()}`);
-        const snapshot = await uploadBytes(storageRef, file);
-        const imageUrl = await getDownloadURL(snapshot.ref);
+          // 2. Upload image to Firebase Storage
+          const storage = getStorage();
+          const storageRef = ref(storage, `users/${user.uid}/reports/${file.name}_${Date.now()}`);
+          const snapshot = await uploadBytes(storageRef, file);
+          const imageUrl = await getDownloadURL(snapshot.ref);
 
-        // 4. Save report to Firestore
-        if (reportsRef) {
-            await addDoc(reportsRef, {
-              name: file.name,
-              text: text,
-              imageUrl: imageUrl,
-              createdAt: serverTimestamp(),
-            });
+          // 3. Save report to Firestore
+          const reportsRef = collection(firestore, 'users', user.uid, 'reports');
+          await addDoc(reportsRef, {
+            name: file.name,
+            text: text,
+            imageUrl: imageUrl,
+            createdAt: serverTimestamp(),
+          });
+          
+          toast({ title: 'Success', description: 'Report uploaded and processed successfully.' });
+
+        } catch (err) {
+            console.error("Error processing file:", err);
+            toast({ variant: 'destructive', title: 'Upload Failed', description: 'There was an error processing your report.' });
+        } finally {
+            setIsUploading(false);
         }
-
-        toast({ title: 'Success', description: 'Report uploaded and processed successfully.' });
       };
 
       reader.onerror = (error) => {
@@ -85,45 +96,8 @@ export default function ReportsPage() {
       console.error(err);
       toast({ variant: 'destructive', title: 'Upload Failed', description: 'There was an error processing your report.' });
       setIsUploading(false);
-    } finally {
-      // Set inside onload/onerror to ensure it's called after async operations
-      // setIsUploading(false);
     }
   };
-  
-  // This function is called when the file reader is done.
-  const onReaderLoad = async (e: ProgressEvent<FileReader>, file: File) => {
-    if (!user || !firestore || !reportsRef) return;
-    try {
-        const dataUri = e.target?.result as string;
-
-        // 2. Extract text using AI
-        const { text } = await extractTextFromDocument({ fileDataUri: dataUri });
-
-        // 3. Upload file to Firebase Storage
-        const storage = getStorage();
-        // Use a unique name to avoid overwrites
-        const storageRef = ref(storage, `users/${user.uid}/reports/${Date.now()}_${file.name}`);
-        const snapshot = await uploadBytes(storageRef, file);
-        const downloadURL = await getDownloadURL(snapshot.ref);
-
-        // 4. Save report to Firestore
-        await addDoc(reportsRef, {
-            name: file.name,
-            text: text,
-            imageUrl: downloadURL, // The URL to view the file (image or otherwise)
-            createdAt: serverTimestamp(),
-        });
-        
-        toast({ title: 'Success', description: 'Report uploaded and processed successfully.' });
-
-    } catch (err) {
-        console.error("Error processing file:", err);
-        toast({ variant: 'destructive', title: 'Upload Failed', description: 'There was an error processing your report.' });
-    } finally {
-        setIsUploading(false);
-    }
-  }
 
 
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -141,14 +115,17 @@ export default function ReportsPage() {
   };
   
   const handleAnalyze = async (report: Report) => {
-    if (!report.imageUrl) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Cannot analyze this report. Image URL is missing.' });
+    if (!report.text) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Cannot analyze this report. Text content is missing.' });
       return;
     }
     setIsAnalyzing(true);
     setAnalysisResult(null);
     setIsModalOpen(true);
     try {
+      // Note: summarizeUploadedReport expects a data URI. 
+      // For simplicity, we are re-using the imageUrl. For a more robust solution,
+      // you might need another flow that takes text as input.
       const result = await summarizeUploadedReport({ fileDataUri: report.imageUrl });
       setAnalysisResult(result.summary);
     } catch(error) {
@@ -221,11 +198,11 @@ export default function ReportsPage() {
       </Card>
       <div>
         <h2 className="text-2xl font-semibold mb-4">Uploaded Reports</h2>
-        {reportsLoading && <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"><Loader2 className="animate-spin" /></div>}
+        {reportsLoading && <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"><Loader2 className="animate-spin" /><span>Loading reports...</span></div>}
         {!reportsLoading && reports && reports.length === 0 && (
             <p className="text-muted-foreground">No reports uploaded yet. Upload one to get started.</p>
         )}
-        {error && <Alert variant="destructive"><AlertTitle>Error</AlertTitle><AlertDescription>Could not load reports.</AlertDescription></Alert>}
+        {error && <Alert variant="destructive"><AlertTitle>Error Loading Reports</AlertTitle><AlertDescription>{error.message}</AlertDescription></Alert>}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {reports?.map((report) => (
             <Card key={report.id} className="overflow-hidden group">

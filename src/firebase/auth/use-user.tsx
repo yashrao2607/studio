@@ -1,8 +1,7 @@
 'use client';
 import {Auth, onAuthStateChanged, User} from 'firebase/auth';
 import React, {createContext, useContext, useEffect, useState} from 'react';
-import {useAuth, useFirestore} from '../provider';
-import {doc, getDoc, setDoc, serverTimestamp} from 'firebase/firestore';
+import {useAuth} from '../provider';
 
 export interface UserProviderProps {
   children: React.ReactNode;
@@ -53,3 +52,5 @@ export const useUser = (): UserContextValue => {
   }
   return context;
 };
+
+    
