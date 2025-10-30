@@ -72,22 +72,59 @@ export default function ReportsPage() {
             });
         }
 
-
         toast({ title: 'Success', description: 'Report uploaded and processed successfully.' });
       };
 
       reader.onerror = (error) => {
         console.error("File reading error:", error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not read the file.' });
+        setIsUploading(false);
       }
 
     } catch (err) {
       console.error(err);
       toast({ variant: 'destructive', title: 'Upload Failed', description: 'There was an error processing your report.' });
-    } finally {
       setIsUploading(false);
+    } finally {
+      // Set inside onload/onerror to ensure it's called after async operations
+      // setIsUploading(false);
     }
   };
+  
+  // This function is called when the file reader is done.
+  const onReaderLoad = async (e: ProgressEvent<FileReader>, file: File) => {
+    if (!user || !firestore || !reportsRef) return;
+    try {
+        const dataUri = e.target?.result as string;
+
+        // 2. Extract text using AI
+        const { text } = await extractTextFromDocument({ fileDataUri: dataUri });
+
+        // 3. Upload file to Firebase Storage
+        const storage = getStorage();
+        // Use a unique name to avoid overwrites
+        const storageRef = ref(storage, `users/${user.uid}/reports/${Date.now()}_${file.name}`);
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+
+        // 4. Save report to Firestore
+        await addDoc(reportsRef, {
+            name: file.name,
+            text: text,
+            imageUrl: downloadURL, // The URL to view the file (image or otherwise)
+            createdAt: serverTimestamp(),
+        });
+        
+        toast({ title: 'Success', description: 'Report uploaded and processed successfully.' });
+
+    } catch (err) {
+        console.error("Error processing file:", err);
+        toast({ variant: 'destructive', title: 'Upload Failed', description: 'There was an error processing your report.' });
+    } finally {
+        setIsUploading(false);
+    }
+  }
+
 
   const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -199,6 +236,8 @@ export default function ReportsPage() {
                   width={400}
                   height={300}
                   className="object-cover w-full h-48"
+                  // Show a generic icon for non-image files
+                  onError={(e) => { e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJsdWNpZGUgbHVjaWRlLWZpbGUtdGV4dCI+PHBhdGggZD0iTTE0LjUgMiBITCBhMiAyIDAgMCAwLTIgMnYxNmEyIDIgMCAwIDAgMiAyaDEyYTIgMiAwIDAgMCAyLTJWOVoiLz48cG9seWxpbmUgcG9pbnRzPSIxNCAyIDE0IDkgMjEgOSIvPjxwYXRoIGQ9Ik0xNiAxM0g4Ii8+PHBhdGggZD0iTTE2IDE3SDgiLz48cGF0aCBkPSJNMTAgOUg4Ii8+PC9zdmc+'; e.currentTarget.className="object-contain w-full h-48 p-4 text-muted-foreground"; }}
                 />
                  <Button variant="destructive" size="icon" className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleDelete(report)}>
                     <Trash2 className="h-4 w-4" />
@@ -247,3 +286,5 @@ export default function ReportsPage() {
     </div>
   );
 }
+
+    

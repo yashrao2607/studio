@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,7 @@ import { Send, Bot, User, Loader2 } from 'lucide-react';
 import { answerQuestionsAboutReport } from '@/ai/flows/answer-questions-about-report';
 import { useToast } from "@/hooks/use-toast"
 import { useUser, useFirestore, useCollection } from '@/firebase';
-import { collection } from 'firebase/firestore';
+import { collection, query, orderBy } from 'firebase/firestore';
 
 type Message = {
   sender: 'user' | 'ai';
@@ -21,13 +21,23 @@ export default function ChatPage() {
   const { toast } = useToast();
   const { user } = useUser();
   const firestore = useFirestore();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const reportsRef = useMemo(() => {
+  const reportsQuery = useMemo(() => {
     if (!user || !firestore) return null;
-    return collection(firestore, 'users', user.uid, 'reports');
+    // Query to get all reports for the current user
+    return query(collection(firestore, 'users', user.uid, 'reports'), orderBy('createdAt', 'desc'));
   }, [user, firestore]);
 
-  const { data: reports, loading: reportsLoading } = useCollection(reportsRef);
+  const { data: reports, loading: reportsLoading } = useCollection(reportsQuery);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading]);
 
   const handleSendMessage = async () => {
     if (input.trim() === '' || isLoading) return;
@@ -35,8 +45,8 @@ export default function ChatPage() {
     if (!reports || reports.length === 0) {
         toast({
             variant: "destructive",
-            title: "No Reports",
-            description: "Please upload a report before asking a question.",
+            title: "No Reports Found",
+            description: "Please upload at least one report on the 'Reports' page before asking questions.",
         });
         return;
     }
@@ -47,9 +57,11 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-        const reportTexts = reports.map((report) => report.text).filter(Boolean);
+        // Combine the text from all reports into a single context
+        const reportTexts = reports.map((report) => `Report Name: ${report.name}\nContent:\n${report.text}`).filter(Boolean);
+        
         if (reportTexts.length === 0) {
-            const aiMessage: Message = { sender: 'ai', text: "It seems none of your uploaded reports have extractable text. Please try uploading different documents." };
+            const aiMessage: Message = { sender: 'ai', text: "It seems none of your uploaded reports contain extractable text. Please try uploading different documents." };
             setMessages((prev) => [...prev, aiMessage]);
             setIsLoading(false);
             return;
@@ -59,13 +71,13 @@ export default function ChatPage() {
         const aiMessage: Message = { sender: 'ai', text: result.answer };
         setMessages((prev) => [...prev, aiMessage]);
     } catch(error) {
-        console.error("Error with AI call:", error);
-        const errorMessage: Message = { sender: 'ai', text: "Sorry, I couldn't process that. Please try again." };
+        console.error("Error communicating with AI:", error);
+        const errorMessage: Message = { sender: 'ai', text: "Sorry, I encountered an error while processing your question. Please try again." };
         setMessages((prev) => [...prev, errorMessage]);
         toast({
             variant: "destructive",
-            title: "AI Error",
-            description: "There was an issue communicating with the AI.",
+            title: "AI Communication Error",
+            description: "There was an issue getting a response from the AI. Please check your connection and try again.",
         });
     } finally {
         setIsLoading(false);
@@ -89,7 +101,7 @@ export default function ChatPage() {
                 <AvatarFallback><Bot size={18} /></AvatarFallback>
               </Avatar>
             )}
-            <div className={`rounded-2xl p-3 max-w-lg ${msg.sender === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+            <div className={`rounded-2xl p-3 max-w-lg prose prose-sm dark:prose-invert ${msg.sender === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
               <p className="text-sm">{msg.text}</p>
             </div>
              {msg.sender === 'user' && (
@@ -119,12 +131,13 @@ export default function ChatPage() {
                 </div>
             </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
       <div className="p-4 border-t bg-background">
             <div className="relative flex items-center">
               <Input
                 type="text"
-                placeholder={reportsLoading ? "Loading reports..." : "Ask a question about your reports..."}
+                placeholder={reportsLoading ? "Loading your reports..." : (reports && reports.length > 0 ? "Ask about your reports..." : "Upload a report to start chatting")}
                 className="pr-12"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -143,3 +156,5 @@ export default function ChatPage() {
     </div>
   );
 }
+
+    
