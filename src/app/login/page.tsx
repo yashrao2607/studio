@@ -1,25 +1,47 @@
 'use client';
 import Link from 'next/link';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Logo } from '@/components/logo';
-import { useAuth, FirebaseClientProvider } from '@/firebase';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { useAuth } from '@/firebase';
+import { GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { FirebaseError } from 'firebase/app';
+
+const loginSchema = z.object({
+  email: z.string().email('Please enter a valid email address.'),
+  password: z.string().min(1, 'Password is required.'),
+});
 
 function LoginPageContent() {
   const auth = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
+  const form = useForm<z.infer<typeof loginSchema>>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+  });
+
   const handleGoogleLogin = async () => {
     if (!auth) return;
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
+      toast({
+        title: 'Login Successful',
+        description: "You've been successfully logged in.",
+      });
       router.push('/dashboard');
     } catch (error) {
       console.error('Google login error', error);
@@ -27,6 +49,39 @@ function LoginPageContent() {
         variant: 'destructive',
         title: 'Login Failed',
         description: 'Could not log in with Google. Please try again.',
+      });
+    }
+  };
+
+  const onSubmit = async (values: z.infer<typeof loginSchema>) => {
+    if (!auth) return;
+    try {
+      await signInWithEmailAndPassword(auth, values.email, values.password);
+      toast({
+        title: 'Login Successful',
+        description: "You've been successfully logged in.",
+      });
+      router.push('/dashboard');
+    } catch (error) {
+      let description = 'An unexpected error occurred. Please try again.';
+      if (error instanceof FirebaseError) {
+        switch (error.code) {
+          case 'auth/user-not-found':
+          case 'auth/wrong-password':
+            description = 'Invalid email or password.';
+            break;
+          case 'auth/invalid-email':
+            description = 'Please enter a valid email address.';
+            break;
+          default:
+            description = error.message;
+            break;
+        }
+      }
+      toast({
+        variant: 'destructive',
+        title: 'Login Failed',
+        description,
       });
     }
   };
@@ -45,27 +100,47 @@ function LoginPageContent() {
           <CardDescription>Enter your email below to login to your account</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="m@example.com" required />
-            </div>
-            <div className="grid gap-2">
-              <div className="flex items-center">
-                <Label htmlFor="password">Password</Label>
-                <Link href="#" className="ml-auto inline-block text-sm underline">
-                  Forgot your password?
-                </Link>
-              </div>
-              <Input id="password" type="password" required />
-            </div>
-            <Button type="submit" className="w-full">
-              Login
-            </Button>
-            <Button variant="outline" className="w-full" onClick={handleGoogleLogin}>
-              Login with Google
-            </Button>
-          </div>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem className="grid gap-2">
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input placeholder="m@example.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem className="grid gap-2">
+                     <div className="flex items-center">
+                       <FormLabel>Password</FormLabel>
+                       <Link href="#" className="ml-auto inline-block text-sm underline">
+                         Forgot your password?
+                       </Link>
+                     </div>
+                    <FormControl>
+                      <Input type="password" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? 'Logging in...' : 'Login'}
+              </Button>
+              <Button variant="outline" className="w-full" onClick={handleGoogleLogin} type="button">
+                Login with Google
+              </Button>
+            </form>
+          </Form>
           <div className="mt-4 text-center text-sm">
             Don&apos;t have an account?{' '}
             <Link href="/signup" className="underline">
@@ -79,9 +154,5 @@ function LoginPageContent() {
 }
 
 export default function LoginPage() {
-    return (
-        <FirebaseClientProvider>
-            <LoginPageContent />
-        </FirebaseClientProvider>
-    )
+  return <LoginPageContent />;
 }

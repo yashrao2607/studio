@@ -12,7 +12,7 @@ import {
   FileText,
   LayoutGrid
 } from 'lucide-react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,9 +21,20 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Logo } from '@/components/logo';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { useUser } from '@/firebase';
+import { useEffect } from 'react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, loading } = useUser();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/login');
+    }
+  }, [user, loading, router]);
+
 
   const navItems = [
     { href: '/dashboard', icon: LayoutGrid, label: 'Dashboard' },
@@ -32,6 +43,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { href: '/dashboard/reminders', icon: Bell, label: 'Reminders' },
     { href: '/dashboard/settings', icon: Settings, label: 'Settings' },
   ];
+
+  if (loading || !user) {
+    return (
+        <div className="flex items-center justify-center min-h-screen">
+            <p>Loading...</p>
+        </div>
+    )
+  }
 
   return (
     <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">
