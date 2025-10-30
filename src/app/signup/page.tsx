@@ -48,15 +48,15 @@ export default function SignupPage() {
           <div className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="first-name">Full Name</Label>
-              <Input id="first-name" placeholder="Max" required disabled />
+              <Input id="first-name" placeholder="Max" required />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="m@example.com" required disabled />
+              <Input id="email" type="email" placeholder="m@example.com" required />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" disabled/>
+              <Input id="password" type="password" />
             </div>
             <Button type="submit" className="w-full" disabled>
               Create an account
