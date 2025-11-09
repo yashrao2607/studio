@@ -102,7 +102,6 @@ Based on the context above, what is the answer?`;
     
     // 5. Call the LLM to generate an answer
     const { text } = await ai.generate({
-      model: 'googleai/gemini-1.5-flash',
       prompt: finalPrompt,
     });
 
