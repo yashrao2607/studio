@@ -32,6 +32,7 @@ const extractTextPrompt = ai.definePrompt({
   name: 'extractTextPrompt',
   input: {schema: ExtractTextFromDocumentInputSchema},
   output: {schema: ExtractTextFromDocumentOutputSchema},
+  model: 'googleai/gemini-1.5-flash',
   prompt: `Extract all the text from the following document.
 
   Document: {{media url=fileDataUri}}`,
