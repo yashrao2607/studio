@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -5,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, Clock, MessageSquare, Phone, User, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, MessageSquare, Phone, User, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -30,7 +31,7 @@ type Reminder = z.infer<typeof reminderFormSchema> & { id: number };
 
 export default function RemindersPage() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof reminderFormSchema>>({
@@ -43,11 +44,41 @@ export default function RemindersPage() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof reminderFormSchema>) {
-    const newReminder = { ...values, id: Date.now() };
-    setReminders(prev => [newReminder, ...prev]);
-    setShowConfirm(true);
-    form.reset();
+  async function onSubmit(values: z.infer<typeof reminderFormSchema>) {
+    setIsSending(true);
+    try {
+      const response = await fetch('/api/send-sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: values.phone,
+          message: values.message,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to send reminder.');
+      }
+
+      const newReminder = { ...values, id: Date.now() };
+      setReminders(prev => [newReminder, ...prev]);
+      toast({
+        title: 'Reminder Sent!',
+        description: `SMS scheduled for ${values.name}.`,
+      });
+      form.reset({ name: '', phone: '', message: '', time: '09:00' });
+
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error Sending Reminder',
+        description: error.message || 'An unknown error occurred.',
+      });
+    } finally {
+      setIsSending(false);
+    }
   }
 
   return (
@@ -69,7 +100,7 @@ export default function RemindersPage() {
                     <FormControl>
                       <div className="relative">
                         <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="e.g. John Doe" {...field} className="pl-9" />
+                        <Input placeholder="e.g. John Doe" {...field} className="pl-9" disabled={isSending} />
                       </div>
                     </FormControl>
                     <FormMessage />
@@ -85,7 +116,7 @@ export default function RemindersPage() {
                     <FormControl>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="+1 (555) 000-0000" {...field} className="pl-9" />
+                        <Input placeholder="9999999999" {...field} className="pl-9" disabled={isSending} />
                       </div>
                     </FormControl>
                     <FormMessage />
@@ -101,7 +132,7 @@ export default function RemindersPage() {
                     <FormControl>
                        <div className="relative">
                         <MessageSquare className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Textarea placeholder="e.g. 'Time to take your morning medication.'" {...field} className="pl-9" />
+                        <Textarea placeholder="e.g. 'Time to take your morning medication.'" {...field} className="pl-9" disabled={isSending} />
                       </div>
                     </FormControl>
                     <FormMessage />
@@ -121,6 +152,7 @@ export default function RemindersPage() {
                             <Button
                               variant={'outline'}
                               className={cn('pl-3 text-left font-normal', !field.value && 'text-muted-foreground')}
+                              disabled={isSending}
                             >
                               {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
                               <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
@@ -144,7 +176,7 @@ export default function RemindersPage() {
                        <FormControl>
                         <div className="relative">
                           <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input placeholder="HH:MM" {...field} className="pl-9" />
+                          <Input placeholder="HH:MM" {...field} className="pl-9" disabled={isSending} />
                         </div>
                       </FormControl>
                       <FormMessage />
@@ -152,7 +184,10 @@ export default function RemindersPage() {
                   )}
                 />
               </div>
-              <Button type="submit" className="w-full">Send Reminder</Button>
+              <Button type="submit" className="w-full" disabled={isSending}>
+                {isSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isSending ? 'Sending...' : 'Send Reminder'}
+              </Button>
             </form>
           </Form>
         </CardContent>
@@ -196,19 +231,6 @@ export default function RemindersPage() {
           </Table>
         </CardContent>
       </Card>
-      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reminder Set Successfully!</AlertDialogTitle>
-            <AlertDialogDescription>
-              A reminder has been scheduled. The patient will receive an SMS at the specified time.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction>OK</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
