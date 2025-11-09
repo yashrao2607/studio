@@ -1,13 +1,17 @@
+
 "use client";
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Send, Bot, User, Loader2 } from 'lucide-react';
+import { Send, Bot, User, Loader2, Paperclip } from 'lucide-react';
 import { answerQuestionsAboutReport } from '@/ai/flows/answer-questions-about-report';
 import { useToast } from "@/hooks/use-toast"
 import { useUser, useFirestore, useCollection } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { extractTextFromDocument } from '@/ai/flows/extract-text-from-document';
+import { indexReport } from '@/ai/flows/index-report-flow';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 type Message = {
   sender: 'user' | 'ai';
@@ -18,18 +22,13 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
   const { toast } = useToast();
   const { user } = useUser();
   const firestore = useFirestore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // This query is just to check if any reports exist to enable the input.
-  const reportsQuery = useMemo(() => {
-    if (!user || !firestore) return null;
-    return query(collection(firestore, 'users', user.uid, 'reports'));
-  }, [user, firestore]);
-
-  const { data: reports, loading: reportsLoading } = useCollection(reportsQuery);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -37,19 +36,69 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages, isLoading, isUploading]);
+
+  const readFileAsDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const handleFileChange = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !user || !firestore) return;
+    
+    const file = files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    
+    try {
+      const dataUri = await readFileAsDataURL(file);
+      const { text } = await extractTextFromDocument({ fileDataUri: dataUri });
+
+      if (!text) {
+        throw new Error("Could not extract text from the document.");
+      }
+
+      const storage = getStorage();
+      const storageRef = ref(storage, `users/${user.uid}/reports/${Date.now()}_${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const imageUrl = await getDownloadURL(snapshot.ref);
+
+      const reportsRef = collection(firestore, 'users', user.uid, 'reports');
+      const docRef = await addDoc(reportsRef, {
+        name: file.name,
+        text: text,
+        imageUrl: imageUrl,
+        createdAt: serverTimestamp(),
+      });
+      
+      toast({ title: 'Success', description: 'Report uploaded. Now indexing for AI chat...' });
+      
+      const indexingResult = await indexReport({ text, reportId: docRef.id, userId: user.uid });
+      if (indexingResult.success) {
+        toast({ title: 'Indexing Complete', description: 'You can now ask questions about this report.' });
+      } else {
+        throw new Error("Failed to index the report for AI chat.");
+      }
+
+    } catch (err: any) {
+      console.error("Error processing file:", err);
+      toast({ variant: 'destructive', title: 'Processing Failed', description: err.message || 'There was an error processing your report.' });
+    } finally {
+        setIsUploading(false);
+        // Reset file input
+        if(fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    }
+  };
 
   const handleSendMessage = async () => {
     if (input.trim() === '' || isLoading || !user) return;
-
-    if (!reports || reports.length === 0) {
-        toast({
-            variant: "destructive",
-            title: "No Reports Found",
-            description: "Please upload at least one report on the 'Reports' page before asking questions.",
-        });
-        return;
-    }
 
     const userMessage: Message = { sender: 'user', text: input };
     setMessages((prev) => [...prev, userMessage]);
@@ -102,12 +151,12 @@ export default function ChatPage() {
             )}
           </div>
         ))}
-         {messages.length === 0 && !reportsLoading && (
+         {messages.length === 0 && (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-muted-foreground">
               <Bot size={48} className="mx-auto" />
               <p className="mt-2">Ask me anything about your reports.</p>
-              <p className="text-xs">Upload documents in the 'Reports' tab to begin.</p>
+              <p className="text-xs">Upload documents using the paperclip icon to begin.</p>
             </div>
           </div>
         )}
@@ -122,21 +171,34 @@ export default function ChatPage() {
                 </div>
             </div>
         )}
+        {isUploading && (
+            <div className="flex items-start gap-3 justify-center">
+                <div className="rounded-2xl p-3 max-w-md bg-muted flex items-center">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <span>Processing your document...</span>
+                </div>
+            </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
       <div className="p-4 border-t bg-background">
             <div className="relative flex items-center">
               <Input
                 type="text"
-                placeholder={reportsLoading ? "Loading your reports..." : (reports && reports.length > 0 ? "Ask about your reports..." : "Upload a report to start chatting")}
-                className="pr-12"
+                placeholder={"Ask about your reports..."}
+                className="pr-24"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                disabled={isLoading || reportsLoading || !reports || reports.length === 0}
+                disabled={isLoading || isUploading}
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-                <Button size="icon" onClick={handleSendMessage} disabled={isLoading || reportsLoading || !input}>
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => handleFileChange(e.target.files)} accept=".pdf,image/*" />
+                <Button size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={isLoading || isUploading}>
+                  <Paperclip className="h-5 w-5" />
+                   <span className="sr-only">Upload Document</span>
+                </Button>
+                <Button size="icon" onClick={handleSendMessage} disabled={isLoading || isUploading || !input}>
                   <Send className="h-5 w-5" />
                    <span className="sr-only">Send</span>
                 </Button>
@@ -147,3 +209,5 @@ export default function ChatPage() {
     </div>
   );
 }
+
+    
