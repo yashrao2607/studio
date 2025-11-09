@@ -22,8 +22,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isIndexing, setIsIndexing] = useState(false);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   const { toast } = useToast();
   const { user } = useUser();
@@ -37,7 +36,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, isUploading, isIndexing]);
+  }, [messages, isLoading, isProcessingFile]);
 
   const readFileAsDataURL = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -54,8 +53,8 @@ export default function ChatPage() {
     const file = files[0];
     if (!file) return;
 
-    setIsUploading(true);
-    setIsIndexing(false);
+    setIsProcessingFile(true);
+    toast({ title: 'Processing Document', description: 'Uploading, extracting text, and indexing for AI chat...' });
     
     try {
       const dataUri = await readFileAsDataURL(file);
@@ -78,23 +77,18 @@ export default function ChatPage() {
         createdAt: serverTimestamp(),
       });
       
-      toast({ title: 'Success', description: 'Report uploaded. Now indexing for AI chat...' });
-      setIsUploading(false);
-      setIsIndexing(true);
-      
       const indexingResult = await indexReport({ text, reportId: docRef.id, userId: user.uid });
       if (!indexingResult.success) {
         throw new Error("Failed to index the report for AI chat.");
       }
       
-      toast({ title: 'Indexing Complete', description: 'You can now ask questions about this report.' });
+      toast({ title: 'Processing Complete', description: 'You can now ask questions about this report.' });
 
     } catch (err: any) {
       console.error("Error processing file:", err);
       toast({ variant: 'destructive', title: 'Processing Failed', description: err.message || 'There was an error processing your report.' });
     } finally {
-        setIsUploading(false);
-        setIsIndexing(false);
+        setIsProcessingFile(false);
         // Reset file input
         if(fileInputRef.current) {
             fileInputRef.current.value = "";
@@ -156,7 +150,7 @@ export default function ChatPage() {
             )}
           </div>
         ))}
-         {messages.length === 0 && !isUploading && !isIndexing && (
+         {messages.length === 0 && !isProcessingFile && (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-muted-foreground">
               <Bot size={48} className="mx-auto" />
@@ -176,11 +170,11 @@ export default function ChatPage() {
                 </div>
             </div>
         )}
-        {(isUploading || isIndexing) && (
+        {isProcessingFile && (
             <div className="flex items-start gap-3 justify-center">
                 <div className="rounded-2xl p-3 max-w-md bg-muted flex items-center">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    <span>{isUploading ? 'Uploading & Extracting...' : 'Indexing for AI...'}</span>
+                    <span>Processing document...</span>
                 </div>
             </div>
         )}
@@ -195,15 +189,15 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                disabled={isLoading || isUploading || isIndexing}
+                disabled={isLoading || isProcessingFile}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
                 <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => handleFileChange(e.target.files)} accept=".pdf,image/*" />
-                <Button size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={isLoading || isUploading || isIndexing}>
+                <Button size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={isLoading || isProcessingFile}>
                   <Paperclip className="h-5 w-5" />
                    <span className="sr-only">Upload Document</span>
                 </Button>
-                <Button size="icon" onClick={handleSendMessage} disabled={isLoading || isUploading || isIndexing || !input}>
+                <Button size="icon" onClick={handleSendMessage} disabled={isLoading || isProcessingFile || !input}>
                   <Send className="h-5 w-5" />
                    <span className="sr-only">Send</span>
                 </Button>
