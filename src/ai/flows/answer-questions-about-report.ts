@@ -10,7 +10,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { Collection, CloudClient } from 'chromadb';
+import { Collection, CloudClient, CohereEmbeddingFunction } from 'chromadb';
 
 const AnswerQuestionsAboutReportInputSchema = z.object({
   question: z.string().describe('The question to ask about the reports.'),
@@ -37,6 +37,10 @@ export async function answerQuestionsAboutReport(
 let myCollection: Collection | null = null;
 const getMyCollection = async () => {
     if (!myCollection) {
+      if (!process.env.COHERE_API_KEY) {
+        throw new Error("COHERE_API_KEY environment variable not set.");
+      }
+      const embedder = new CohereEmbeddingFunction(process.env.COHERE_API_KEY);
       const chromaClient = new CloudClient({
         apiKey: process.env.CHROMA_API_KEY,
         tenant: process.env.CHROMA_TENANT,
@@ -44,6 +48,7 @@ const getMyCollection = async () => {
       });
       myCollection = await chromaClient.getOrCreateCollection({
         name: 'reports-collection',
+        embeddingFunction: embedder
       });
     }
     return myCollection;
@@ -59,15 +64,12 @@ const answerQuestionsAboutReportFlow = ai.defineFlow(
   },
   async (input) => {
     // Phase 2: Retrieval
-    // 1. Create an embedding for the user's question
-    const { embedding } = await ai.embed({
-      content: input.question,
-    });
-
+    // 1. ChromaDB will automatically create an embedding for the query text.
+    
     // 2. Perform a semantic search in ChromaDB
     const collection = await getMyCollection();
     const queryResults = await collection.query({
-        queryEmbeddings: [embedding],
+        queryTexts: [input.question],
         nResults: 5, // Retrieve the top 5 most relevant chunks
         where: {
             "userId": input.userId // Filter results for the current user

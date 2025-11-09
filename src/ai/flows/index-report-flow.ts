@@ -8,7 +8,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { Collection, CloudClient } from 'chromadb';
+import { Collection, CloudClient, CohereEmbeddingFunction } from 'chromadb';
 
 // Define the input schema for the indexing flow
 const IndexReportInputSchema = z.object({
@@ -42,6 +42,10 @@ function chunkText(text: string, chunkSize = 1000): string[] {
 let myCollection: Collection | null = null;
 const getMyCollection = async () => {
     if (!myCollection) {
+      if (!process.env.COHERE_API_KEY) {
+        throw new Error("COHERE_API_KEY environment variable not set.");
+      }
+      const embedder = new CohereEmbeddingFunction(process.env.COHERE_API_KEY);
       const chromaClient = new CloudClient({
         apiKey: process.env.CHROMA_API_KEY,
         tenant: process.env.CHROMA_TENANT,
@@ -49,6 +53,7 @@ const getMyCollection = async () => {
       });
       myCollection = await chromaClient.getOrCreateCollection({
         name: 'reports-collection',
+        embeddingFunction: embedder
       });
     }
     return myCollection;
@@ -69,12 +74,7 @@ const indexReportFlow = ai.defineFlow(
       return { success: true };
     }
 
-    // 2. Generate embeddings for each chunk
-    const { embeddings } = await ai.embed({
-      content: textChunks,
-    });
-
-    // 3. Prepare data for ChromaDB
+    // 2. Prepare data for ChromaDB
     const ids = textChunks.map(
       (_, index) => `${input.reportId}-chunk-${index}`
     );
@@ -83,12 +83,12 @@ const indexReportFlow = ai.defineFlow(
       reportId: input.reportId,
     }));
 
-    // 4. Add to ChromaDB collection
+    // 3. Add to ChromaDB collection.
+    // ChromaDB will automatically handle embedding generation using the configured Cohere model.
     try {
       const collection = await getMyCollection();
       await collection.add({
         ids: ids,
-        embeddings: embeddings,
         documents: textChunks,
         metadatas: metadatas,
       });
