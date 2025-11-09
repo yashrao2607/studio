@@ -49,10 +49,10 @@ export default function RemindersPage() {
 
     const templateParams = {
         'Patient Name': values.name,
-        'to_email': values.email,
         'Reminder Message': values.message,
         'Date': format(values.date, 'PPP'),
-        'Time': values.time
+        'Time': values.time,
+        'to_email': values.email, // This parameter is used by EmailJS to send to the correct recipient
     };
 
     try {
@@ -60,6 +60,8 @@ export default function RemindersPage() {
       const templateID = 'template_lfpi7id';
       const publicKey = 'TD1Fw3yR8-K8hFRY1';
 
+      // Note: For EmailJS to send to the 'email' field, you must configure this in your EmailJS template settings under the 'Reply-To' field.
+      // The 'to_email' parameter is conventionally used but depends on your specific template setup.
       await emailjs.send(serviceID, templateID, templateParams, publicKey);
       
       const newReminder = { ...values, id: Date.now() };
