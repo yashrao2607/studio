@@ -5,9 +5,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { format } from 'date-fns';
 import { Trash2, Loader2, Mail, MessageSquare } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -22,7 +20,7 @@ const reminderFormSchema = z.object({
   message: z.string().min(5, 'Message must be at least 5 characters.'),
 });
 
-type Reminder = z.infer<typeof reminderFormSchema> & { id: number; createdAt: Date };
+type Reminder = z.infer<typeof reminderFormSchema> & { id: number };
 
 export default function RemindersPage() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -52,7 +50,7 @@ export default function RemindersPage() {
 
       await emailjs.send(serviceID, templateID, templateParams, publicKey);
       
-      const newReminder = { ...values, id: Date.now(), createdAt: new Date() };
+      const newReminder = { ...values, id: Date.now() };
       setReminders(prev => [newReminder, ...prev]);
       toast({
         title: 'Reminder Sent!',
@@ -65,7 +63,7 @@ export default function RemindersPage() {
       toast({
         variant: 'destructive',
         title: 'Error Sending Reminder',
-        description: "Failed to send email. Please check that your EmailJS template variables (e.g. {{reminder_message}}) exactly match the keys sent from the app. Variables cannot contain spaces or special characters. Also, ensure the 'To Email' field in your template settings is set to {{to_email}}.",
+        description: "Failed to send email. Please check that your EmailJS template variable is exactly {{reminder_message}} and that the 'To Email' field in your template settings is set to {{to_email}}. Variables cannot contain spaces.",
         duration: 10000,
       });
     } finally {
