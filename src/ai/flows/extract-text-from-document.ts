@@ -28,15 +28,6 @@ export async function extractTextFromDocument(input: ExtractTextFromDocumentInpu
   return extractTextFromDocumentFlow(input);
 }
 
-const extractTextPrompt = ai.definePrompt({
-  name: 'extractTextPrompt',
-  input: {schema: ExtractTextFromDocumentInputSchema},
-  output: {schema: ExtractTextFromDocumentOutputSchema},
-  model: 'googleai/gemini-1.5-flash',
-  prompt: `Extract all the text from the following document.
-
-  Document: {{media url=fileDataUri}}`,
-});
 
 const extractTextFromDocumentFlow = ai.defineFlow(
   {
@@ -45,7 +36,20 @@ const extractTextFromDocumentFlow = ai.defineFlow(
     outputSchema: ExtractTextFromDocumentOutputSchema,
   },
   async input => {
-    const {output} = await extractTextPrompt(input);
-    return output!;
+    const { text } = await ai.generate({
+        model: 'googleai/gemini-1.5-flash',
+        prompt: `Extract all the text from the following document and return it in a JSON object with a single key "text".
+
+Document: {{media url=fileDataUri}}`,
+    });
+    
+    try {
+        const parsed = JSON.parse(text);
+        return ExtractTextFromDocumentOutputSchema.parse(parsed);
+    } catch(e) {
+        console.error("Failed to parse JSON from AI response for text extraction:", e);
+        // Fallback: if parsing fails, wrap the raw text in the expected object structure.
+        return { text: text };
+    }
   }
 );
