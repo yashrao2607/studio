@@ -1,14 +1,14 @@
 
 "use client";
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Send, Bot, User, Loader2, Paperclip } from 'lucide-react';
 import { answerQuestionsAboutReport } from '@/ai/flows/answer-questions-about-report';
 import { useToast } from "@/hooks/use-toast"
-import { useUser, useFirestore, useCollection } from '@/firebase';
-import { collection, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useUser, useFirestore } from '@/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { extractTextFromDocument } from '@/ai/flows/extract-text-from-document';
 import { indexReport } from '@/ai/flows/index-report-flow';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -21,7 +21,7 @@ type Message = {
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isAsking, setIsAsking] = useState(false);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   const { toast } = useToast();
@@ -36,7 +36,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, isProcessingFile]);
+  }, [messages, isAsking, isProcessingFile]);
 
   const readFileAsDataURL = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -97,13 +97,13 @@ export default function ChatPage() {
   };
 
   const handleSendMessage = async () => {
-    if (input.trim() === '' || isLoading || !user) return;
+    if (input.trim() === '' || isAsking || !user) return;
 
     const userMessage: Message = { sender: 'user', text: input };
     setMessages((prev) => [...prev, userMessage]);
     const currentInput = input;
     setInput('');
-    setIsLoading(true);
+    setIsAsking(true);
 
     try {
         const result = await answerQuestionsAboutReport({ question: currentInput, userId: user.uid });
@@ -119,7 +119,7 @@ export default function ChatPage() {
             description: "There was an issue getting a response from the AI. Please check your connection and try again.",
         });
     } finally {
-        setIsLoading(false);
+        setIsAsking(false);
     }
   };
   
@@ -159,7 +159,7 @@ export default function ChatPage() {
             </div>
           </div>
         )}
-        {isLoading && (
+        {isAsking && (
             <div className="flex items-start gap-3">
                 <Avatar className="w-8 h-8 border">
                     <AvatarFallback><Bot size={18} /></AvatarFallback>
@@ -189,15 +189,15 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                disabled={isLoading || isProcessingFile}
+                disabled={isAsking || isProcessingFile}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
                 <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => handleFileChange(e.target.files)} accept=".pdf,image/*" />
-                <Button size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={isLoading || isProcessingFile}>
+                <Button size="icon" variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={isAsking || isProcessingFile}>
                   <Paperclip className="h-5 w-5" />
                    <span className="sr-only">Upload Document</span>
                 </Button>
-                <Button size="icon" onClick={handleSendMessage} disabled={isLoading || isProcessingFile || !input}>
+                <Button size="icon" onClick={handleSendMessage} disabled={isAsking || isProcessingFile || !input}>
                   <Send className="h-5 w-5" />
                    <span className="sr-only">Send</span>
                 </Button>
